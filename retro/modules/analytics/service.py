@@ -146,3 +146,93 @@ def build_report(start, end, states, *, today, history_start, configured=True, r
         updated_at=updated.astimezone(TZ).isoformat(timespec='seconds') if updated else None,
         complete=all(period['complete'] for period in periods),
         periods=periods, comparison=comparison, warnings=warnings)
+
+
+# ── Вся история (T-592) ────────────────────────────────────────────────────
+# Выручка Retro с первого дня истории продаж по сегодня столбиками по дням,
+# неделям (пн–вс) или месяцам. Тот же источник и то же направление, что выше;
+# пропуск — не ноль, а неполный столбик, и это видно в ответе.
+
+GROUPS = ('day', 'week', 'month')
+MONTHS = ('янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек')
+
+
+def bucket_bounds(day, group):
+    """Календарные границы столбика, в который попадает день."""
+    if group == 'week':
+        first = day - timedelta(days=day.weekday())
+        return first, first + timedelta(days=6)
+    if group == 'month':
+        first = day.replace(day=1)
+        following = (first + timedelta(days=32)).replace(day=1)
+        return first, following - timedelta(days=1)
+    return day, day
+
+
+def bucket_label(first, last, group, today):
+    def short(day):
+        return day.strftime('%d.%m') if day.year == today.year else day.strftime('%d.%m.%Y')
+    if group == 'month':
+        return f'{MONTHS[first.month - 1]} {first.year}'
+    if group == 'week':
+        return f'{short(first)} – {short(last)}'
+    return f'{WEEKDAYS[first.weekday()]} {short(first)}'
+
+
+def history_report(first, today, states, *, group, history_start, configured=True, refresh_error=None):
+    """Столбики выручки Retro с `first` по `today` из состояний дней (`SalesStore.states`).
+
+    Столбик на краю истории обрезан её началом или сегодняшним днём (`clipped`),
+    столбик с пропуском или незакрытым днём — неполный (`complete=False`): сумма
+    в нём по загруженным дням, среднее за день — по ним же, чтобы неполные
+    недели и месяцы можно было сравнить с полными."""
+    buckets, day = [], first
+    while day <= today:
+        start, end = bucket_bounds(day, group)
+        last = min(end, today)
+        loaded, partial = [], False
+        cursor = day
+        while cursor <= last:
+            revenue = retro_revenue(states[cursor]) if cursor in states else None
+            if revenue is not None:
+                loaded.append(revenue)
+                partial = partial or cursor >= today or not states[cursor]['closed']
+            cursor += timedelta(days=1)
+        length = (last - day).days + 1
+        total = sum(loaded, Decimal(0)) if loaded else None
+        clipped = day != start or last != end
+        buckets.append(dict(
+            start=day.isoformat(), end=last.isoformat(), label=bucket_label(start, end, group, today),
+            total=None if total is None else str(total), days=length, days_with_data=len(loaded),
+            average=None if total is None else str((total / len(loaded)).quantize(Decimal(1), rounding=ROUND_HALF_UP)),
+            partial=partial, clipped=clipped, complete=len(loaded) == length and not partial and not clipped))
+        day = last + timedelta(days=1)
+    days = (today - first).days + 1 if first <= today else 0
+    loaded_days = sum(bucket['days_with_data'] for bucket in buckets)
+    total = sum((Decimal(bucket['total']) for bucket in buckets if bucket['total'] is not None), Decimal(0))
+    warnings = []
+    if not configured:
+        warnings.append('iiko не подключён: показана только история продаж, уже сохранённая в базе панели.')
+    missing = days - loaded_days
+    if missing:
+        # Дни до начала истории фон не грузит; после — догрузит сам, по дню в минуту.
+        before = sum(1 for offset in range(days) if first + timedelta(days=offset) < history_start
+                     and retro_revenue(states.get(first + timedelta(days=offset)) or {}) is None)
+        text = f'Нет данных за {missing} {day_word(missing)} из {days}'
+        if configured and missing > before:
+            text += ' — они ещё загружаются из iiko, по дню в минуту; в суммы пока не вошли.'
+        else:
+            text += ' — в суммы они не вошли.'
+        warnings.append(text)
+    if refresh_error:
+        warnings.append(refresh_error)
+    updated = max((state['fetched_at'] for state in states.values()), default=None)
+    return dict(
+        source='iiko OLAP SALES · история чеков в базе панели', timezone=str(TZ), today=today.isoformat(),
+        direction=DIRECTION, direction_name=DIRECTION_NAME, group=group,
+        start=first.isoformat(), end=today.isoformat(), history_start=history_start.isoformat(),
+        configured=configured, days=days, days_with_data=loaded_days,
+        total=str(total) if loaded_days else None,
+        average=str((total / loaded_days).quantize(Decimal(1), rounding=ROUND_HALF_UP)) if loaded_days else None,
+        updated_at=updated.astimezone(TZ).isoformat(timespec='seconds') if updated else None,
+        buckets=buckets, warnings=warnings)

@@ -56,6 +56,13 @@
       <div id="an-chart" class="an-chart" aria-label="Линейный график выручки за три недели"></div>
       <details class="an-table-details"><summary>Таблица по дням</summary><div class="an-table-wrap"><table class="an-table" id="an-table"><thead><tr><th>День</th><th data-head="current">Выбранный период</th><th data-head="previous">Период раньше</th><th data-head="year">Год назад</th></tr></thead><tbody></tbody></table></div></details>
     </section>
+    <!-- T-592: выручка за всю историю продаж в базе панели — столбики по дням, неделям или месяцам. -->
+    <section class="panel an-panel an-history" aria-labelledby="an-history-title">
+      <div class="an-panel-head"><div><p class="eyebrow">ВСЯ ИСТОРИЯ</p><h2 id="an-history-title">Выручка за всё время</h2><p class="an-panel-note">Столбик — выручка Retro за день, неделю (пн–вс) или месяц с первого дня истории продаж в базе панели по сегодня. Светлый столбик — неполный: край истории, пропуск или день, который ещё идёт; сравнивайте их по среднему за день в подсказке.</p></div><div class="quick-days an-history-group" role="group" aria-label="Детализация истории"><button class="chip" type="button" data-group="day">По дням</button><button class="chip active" type="button" data-group="week">По неделям</button><button class="chip" type="button" data-group="month">По месяцам</button></div></div>
+      <dl class="an-history-summary" aria-live="polite"><div><dt>Всего</dt><dd id="an-history-total">—</dd></div><div><dt>В среднем за день</dt><dd id="an-history-average">—</dd></div><div><dt>Период</dt><dd id="an-history-range">—</dd></div><div><dt>Дней с данными</dt><dd id="an-history-days">—</dd></div></dl>
+      <div id="an-history-chart" class="an-chart an-history-chart" aria-label="Столбчатый график выручки за всю историю"></div>
+      <p id="an-history-message" class="notice an-history-message" role="status" aria-live="polite" hidden></p>
+    </section>
     <p class="an-footnote">Выручка — по датам заказов из истории чеков iiko в базе панели, только касса Retro (Яндекс Еда входит), без Retro в школе и банкетного зала, в сумах. Сегодняшний день в окно по умолчанию не входит: он ещё идёт.</p>
     <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Аналитика</span><span>Время Ташкента</span></footer>
   </div>
