@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from retro.modules.cashier.service import today_tashkent
 
-from .service import MAX_DAYS, WINDOW, build_report, spans
+from .service import GROUPS, MAX_DAYS, WINDOW, build_report, history_report, spans
 
 router = APIRouter(prefix='/api/analytics', tags=['analytics'])
 
@@ -52,3 +52,24 @@ async def revenue_weeks(request: Request, start: date | None = None, end: date |
         states.update(await asyncio.to_thread(sales.store.states, first, last))
     return build_report(start, end, states, today=today, history_start=sales.settings.sales_history_start,
                         configured=sales.sync is not None, refresh_error=refresh_error)
+
+
+@router.get('/revenue/history')
+async def revenue_history(request: Request, group: str = 'week'):
+    """Выручка Retro за всю историю продаж в базе панели — по дням, неделям или месяцам.
+
+    Начало — первый сохранённый день или `SALES_HISTORY_START`, что раньше; конец —
+    сегодня (идущий день помечен). Пропущенные дни встают в очередь фоновой
+    загрузки, как и в окне выше; в iiko отдельно модуль не ходит."""
+    if group not in GROUPS:
+        raise HTTPException(422, 'Детализация — day, week или month.')
+    today = today_tashkent()
+    sales = request.app.state.sales
+    history_start = sales.settings.sales_history_start
+    coverage = await asyncio.to_thread(sales.store.coverage)
+    first = min(history_start, date.fromisoformat(coverage['first_day'])) if coverage['first_day'] else history_start
+    first = min(first, today)
+    refresh_error = await sales.refresh_today(first, today)
+    states = await asyncio.to_thread(sales.store.states, first, today)
+    return history_report(first, today, states, group=group, history_start=history_start,
+                          configured=sales.sync is not None, refresh_error=refresh_error)

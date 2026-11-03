@@ -4534,3 +4534,33 @@ globalThis.RetroTemplatesUz.push(
   [/^Последняя неделя неполная: (.+)$/, "So‘nggi hafta to‘liq emas: $1"],
 );
 /* ── /T-524 ── */
+/* ── T-592: вся история выручки в «Аналитике» ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'ВСЯ ИСТОРИЯ': "BUTUN TARIX",
+  'Выручка за всё время': "Butun davr tushumi",
+  'Столбик — выручка Retro за день, неделю (пн–вс) или месяц с первого дня истории продаж в базе панели по сегодня. Светлый столбик — неполный: край истории, пропуск или день, который ещё идёт; сравнивайте их по среднему за день в подсказке.':
+    "Ustun — panel bazasidagi savdo tarixining birinchi kunidan bugungacha Retro’ning kunlik, haftalik (du–ya) yoki oylik tushumi. Och rangli ustun — to‘liq emas: tarix cheti, bo‘shliq yoki hali davom etayotgan kun; ularni izohdagi kunlik o‘rtacha bo‘yicha taqqoslang.",
+  'Детализация истории': "Tarix tafsiloti",
+  'По неделям': "Haftalar bo‘yicha",
+  'По месяцам': "Oylar bo‘yicha",
+  'В среднем за день': "Kunlik o‘rtacha",
+  'Дней с данными': "Ma’lumotli kunlar",
+  'Столбчатый график выручки за всю историю': "Butun tarix tushumining ustunli grafigi",
+  'Наведите или коснитесь столбика, чтобы увидеть сумму': "Summani ko‘rish uchun ustunga olib boring yoki bosing",
+  'В базе панели ещё нет загруженных продаж.': "Panel bazasida hali yuklangan savdolar yo‘q.",
+  'Не удалось загрузить историю выручки.': "Tushum tarixini yuklab bo‘lmadi.",
+  'Детализация — day, week или month.': "Tafsilot — day, week yoki month.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^(янв|фев|мар|апр|май|июн|июл|авг|сен|окт|ноя|дек) (\d{4})$/,
+    (all, month, year) => ({янв: 'yan', фев: 'fev', мар: 'mar', апр: 'apr', май: 'may', июн: 'iyn', июл: 'iyl',
+      авг: 'avg', сен: 'sen', окт: 'okt', ноя: 'noy', дек: 'dek'})[month] + ' ' + year],
+  [/^(\d+) из (\d+) дн\.((?: · (?:край истории|есть незакрытые))+)$/,
+    (all, loaded, days, notes) => `${loaded} / ${days} kun` + notes.replace(' · край истории', ' · tarix cheti')
+      .replace(' · есть незакрытые', ' · yopilmaganlari bor')],
+  [/^Нет данных за (\d+) (?:день|дня|дней) из (\d+) — они ещё загружаются из iiko, по дню в минуту; в суммы пока не вошли\.$/,
+    "$2 kundan $1 kun uchun ma’lumot yo‘q — ular hali iiko’dan daqiqasiga bir kundan yuklanmoqda; summalarga hali kirmagan."],
+  [/^Нет данных за (\d+) (?:день|дня|дней) из (\d+) — в суммы они не вошли\.$/,
+    "$2 kundan $1 kun uchun ma’lumot yo‘q — ular summalarga kirmagan."],
+);
+/* ── /T-592 ── */

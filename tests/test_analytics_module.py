@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 
 from retro.app import ROLE_PATHS, create_app
 from retro.config import Settings
-from retro.modules.analytics.service import MAX_DAYS, WINDOW, YEAR_SHIFT, build_report, compare, day_word, retro_revenue, spans, windows
+from retro.modules.analytics.service import (MAX_DAYS, WINDOW, YEAR_SHIFT, build_report, compare, day_word, history_report,
+                                             retro_revenue, spans, windows)
 from retro.modules.cashier.service import TZ, today_tashkent
 
 USERS = {'analyst': ('secret', 'analytics'), 'director': ('secret', 'director'), 'founder': ('secret', 'founder'),
@@ -251,3 +252,87 @@ def test_build_report_is_pure_and_reports_history_start():
                for text in report['warnings'])
     assert [period['key'] for period in report['periods']] == ['current', 'previous', 'year']
     assert report['timezone'] == 'Asia/Tashkent' and report['source'].startswith('iiko OLAP SALES')
+
+
+# ── Вся история (T-592) ───────────────────────────────────────────────────
+
+def save(store, day, retro, *, closed=True, school=0, banquet=0):
+    total = Decimal(retro) + Decimal(school) + Decimal(banquet)
+    store.save_day(day, [], [], fetched_at=datetime.combine(day, datetime.min.time(), TZ) + timedelta(hours=23),
+                   revision='r1', closed=closed, revenue=total, iiko_revenue=total,
+                   status='ok', reconciliation=reconciliation(retro, school, banquet))
+
+
+def test_history_buckets_follow_the_calendar_and_flag_clipped_edges():
+    # История с четверга 01.10 по вторник 13.10: первая неделя обрезана началом
+    # истории, последняя — сегодняшним днём; 05.10 не загружен, 12.10 не закрыт.
+    first, today = date(2026, 10, 1), date(2026, 10, 13)
+    states = {}
+    for offset in range(13):
+        day = first + timedelta(days=offset)
+        if day == date(2026, 10, 5):
+            continue
+        states[day] = dict(day=day, closed=day != date(2026, 10, 12), reconciliation=reconciliation(100, school=50),
+                           fetched_at=datetime.combine(day, datetime.min.time(), TZ))
+    report = history_report(first, today, states, group='week', history_start=first)
+    weeks = report['buckets']
+    assert [(week['start'], week['end'], week['days'], week['days_with_data']) for week in weeks] == [
+        ('2026-10-01', '2026-10-04', 4, 4), ('2026-10-05', '2026-10-11', 7, 6), ('2026-10-12', '2026-10-13', 2, 2)]
+    assert [week['label'] for week in weeks] == ['28.09 – 04.10', '05.10 – 11.10', '12.10 – 18.10']
+    assert [week['total'] for week in weeks] == ['400', '600', '200']  # школа в Retro не входит
+    assert [(week['clipped'], week['partial'], week['complete']) for week in weeks] == [
+        (True, False, False), (False, False, False), (True, True, False)]
+    assert weeks[1]['average'] == '100'
+    assert (report['total'], report['days'], report['days_with_data'], report['average']) == ('1200', 13, 12, '100')
+    assert report['warnings'] == ['Нет данных за 1 день из 13 — они ещё загружаются из iiko, по дню в минуту; в суммы пока не вошли.']
+    months = history_report(first, today, states, group='month', history_start=first)['buckets']
+    assert [(month['label'], month['total'], month['clipped']) for month in months] == [('окт 2026', '1200', True)]
+    days = history_report(first, today, states, group='day', history_start=first)['buckets']
+    assert len(days) == 13 and days[0]['label'] == 'чт 01.10' and days[4]['total'] is None and days[4]['average'] is None
+    assert days[0]['complete'] is True and days[-1]['partial'] is True
+
+
+def test_history_months_cross_the_year_with_full_month_bounds():
+    first, today = date(2025, 11, 15), date(2026, 2, 3)
+    states = {day: dict(day=day, closed=True, reconciliation=reconciliation(10), fetched_at=datetime.combine(day, datetime.min.time(), TZ))
+              for day in (first + timedelta(days=offset) for offset in range((today - first).days))}
+    months = history_report(first, today, states, group='month', history_start=first)['buckets']
+    assert [(m['label'], m['start'], m['end'], m['days']) for m in months] == [
+        ('ноя 2025', '2025-11-15', '2025-11-30', 16), ('дек 2025', '2025-12-01', '2025-12-31', 31),
+        ('янв 2026', '2026-01-01', '2026-01-31', 31), ('фев 2026', '2026-02-01', '2026-02-03', 3)]
+    assert [m['complete'] for m in months] == [False, True, True, False]
+    # Сегодняшний день не загружен — последний месяц неполный по данным.
+    assert months[-1]['days_with_data'] == 2
+    weeks = history_report(first, today, states, group='week', history_start=first)['buckets']
+    assert weeks[0]['label'] == '10.11.2025 – 16.11.2025' and weeks[-1]['label'] == '02.02 – 08.02'
+
+
+def test_history_endpoint_starts_at_the_first_stored_day(client, app):
+    store = app.state.sales_store
+    start = app.state.sales.settings.sales_history_start
+    early = start - timedelta(days=3)
+    for offset in range(3):
+        save(store, early + timedelta(days=offset), 1000, banquet=5000)
+    save(store, YESTERDAY, 2000, closed=False)
+    data = client.get('/api/analytics/revenue/history?group=day', auth=('analyst', 'secret')).json()
+    assert data['start'] == early.isoformat() and data['end'] == TODAY.isoformat() and data['group'] == 'day'
+    assert data['direction'] == 'retro' and data['days'] == (TODAY - early).days + 1
+    assert data['days_with_data'] == 4 and data['total'] == '5000'
+    assert data['buckets'][0]['total'] == '1000'
+    yesterday = next(bucket for bucket in data['buckets'] if bucket['start'] == YESTERDAY.isoformat())
+    assert yesterday['partial'] is True and yesterday['complete'] is False
+    assert data['warnings'][0].startswith('iiko не подключён')
+    assert client.get('/api/analytics/revenue/history', auth=('analyst', 'secret')).json()['group'] == 'week'
+    assert client.get('/api/analytics/revenue/history?group=year', auth=('analyst', 'secret')).status_code == 422
+
+
+def test_history_endpoint_without_sales_says_so(client):
+    data = client.get('/api/analytics/revenue/history?group=month', auth=('analyst', 'secret')).json()
+    assert data['total'] is None and data['average'] is None and data['days_with_data'] == 0
+    assert all(bucket['total'] is None for bucket in data['buckets'])
+    assert data['updated_at'] is None
+
+
+@pytest.mark.parametrize('user,status', [('analyst', 200), ('boss', 200), ('director', 403), ('founder', 403), ('cashier', 403)])
+def test_history_endpoint_follows_the_panel(client, user, status):
+    assert client.get('/api/analytics/revenue/history', auth=(user, 'secret')).status_code == status
