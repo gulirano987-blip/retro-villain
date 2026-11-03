@@ -188,8 +188,13 @@ def test_missing_and_open_days_are_said_not_zeroed(client, app):
     assert data['comparison'][0]['diff'] == '-1000'
 
 
-def test_no_history_means_no_totals_and_no_comparison(client):
-    data = client.get('/api/analytics/revenue/weeks', auth=('analyst', 'secret')).json()
+def test_no_history_means_no_totals_and_no_comparison(tmp_path):
+    # Начало истории — месяц назад, чтобы «год назад» гарантированно было до него.
+    settings = Settings(dashboard_panel_users=USERS, data_dir=tmp_path, sales_history_start=TODAY - timedelta(days=30))
+    app = create_app(settings, expense_db_path=tmp_path / 'cashier.sqlite3', accountant_db_path=tmp_path / 'accountant.sqlite3',
+                     director_db_path=tmp_path / 'director.sqlite3', founder_db_path=tmp_path / 'founder.sqlite3')
+    with TestClient(app, base_url='http://dashboard.example.com', client=('203.0.113.10', 50000)) as client:
+        data = client.get('/api/analytics/revenue/weeks', auth=('analyst', 'secret')).json()
     assert [period['total'] for period in data['periods']] == [None, None, None]
     assert all(item['direction'] == 'unknown' and item['diff'] is None for item in data['comparison'])
     assert data['updated_at'] is None and data['complete'] is False
@@ -336,3 +341,17 @@ def test_history_endpoint_without_sales_says_so(client):
 @pytest.mark.parametrize('user,status', [('analyst', 200), ('boss', 200), ('director', 403), ('founder', 403), ('cashier', 403)])
 def test_history_endpoint_follows_the_panel(client, user, status):
     assert client.get('/api/analytics/revenue/history', auth=(user, 'secret')).status_code == status
+
+
+def test_sales_history_starts_with_iiko_but_accounting_boundary_does_not_move(client):
+    """T-592: история продаж — с первого дня продаж Retro в iiko (16.09.2025);
+    граница учёта бухгалтера и кассира от неё не зависит и остаётся 13.10.2026."""
+    from retro.accounting_period import ACCOUNTING_START
+    from retro.config import SALES_HISTORY_START, parse_sales_history_start
+    assert SALES_HISTORY_START == date(2025, 9, 16) == parse_sales_history_start('')
+    assert Settings().sales_history_start == SALES_HISTORY_START
+    assert ACCOUNTING_START == date(2026, 10, 13)
+    before = (ACCOUNTING_START - timedelta(days=1)).isoformat()
+    for path in (f'/api/accountant/day?date={before}', f'/api/cashier/expenses?date={before}'):
+        answer = client.get(path, auth=('boss', 'secret'))
+        assert answer.status_code == 422 and 'Учёт доступен с 13.10.2026' in answer.json()['detail'], path
