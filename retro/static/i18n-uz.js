@@ -4534,6 +4534,19 @@ globalThis.RetroTemplatesUz.push(
   [/^Последняя неделя неполная: (.+)$/, "So‘nggi hafta to‘liq emas: $1"],
 );
 /* ── /T-524 ── */
+/* ── T-648: режим окна «год назад» — те же дни недели или те же даты ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Как сравнивать с годом назад': "Bir yil oldin bilan qanday taqqoslash",
+  'Те же дни недели': "Hafta kunlari bir xil",
+  'Те же даты': "Sanalar bir xil",
+  'Год назад · те же дни недели': "Bir yil oldin · hafta kunlari bir xil",
+  'Год назад · те же даты': "Bir yil oldin · sanalar bir xil",
+  'Точка — выручка Retro за день; дни сравниваются по порядку: первый день периода с первым днём отрезка раньше, «год назад» — по переключателю: те же дни недели 52 недели назад или те же даты годом раньше. Подписи оси — дни выбранного периода.':
+    "Nuqta — Retro kunlik tushumi; kunlar tartib bo‘yicha taqqoslanadi: davrning birinchi kuni oldingi kesimning birinchi kuni bilan, «bir yil oldin» — almashtirgich bo‘yicha: 52 hafta oldingi shu hafta kunlari yoki bir yil oldingi shu sanalar. O‘q yozuvlari — tanlangan davr kunlari.",
+  'Режим «год назад» — weekday (те же дни недели) или date (те же даты).':
+    "«Bir yil oldin» rejimi — weekday (hafta kunlari bir xil) yoki date (sanalar bir xil).",
+});
+/* ── /T-648 ── */
 /* ── T-592: вся история выручки в «Аналитике» ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   'ВСЯ ИСТОРИЯ': "BUTUN TARIX",

@@ -12,7 +12,9 @@
   ];
   const startInput = $('an-start'), endInput = $('an-end'), form = $('an-filters'), message = $('an-message'), status = $('updated');
   const chartBox = $('an-chart'), metrics = document.querySelector('.an-metrics');
-  let today = null, last = null, request = 0;
+  // T-648: режим окна «год назад» — weekday (те же дни недели) или date (те же даты);
+  // живёт до перезагрузки страницы и переживает смену периода.
+  let today = null, last = null, request = 0, yearMode = 'weekday';
 
   function svg(name, attrs = {}) {
     const node = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -234,7 +236,7 @@
     setLoading(true);
     say('');
     try {
-      const response = await fetch(`/api/analytics/revenue/weeks?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, {headers: {accept: 'application/json'}});
+      const response = await fetch(`/api/analytics/revenue/weeks?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&year=${encodeURIComponent(yearMode)}`, {headers: {accept: 'application/json'}});
       const payload = await response.json().catch(() => null);
       if (id !== request) return;
       if (!response.ok) {
@@ -269,6 +271,14 @@
       const kind = chip.dataset.days;
       chip.classList.toggle('active', kind === 'today' ? endInput.value === today
         : endInput.value === L.defaultEnd(today) && length === Number(kind));
+    });
+  }
+
+  function markYearMode() {
+    document.querySelectorAll('.an-year-mode .chip').forEach(chip => {
+      const on = chip.dataset.year === yearMode;
+      chip.classList.toggle('active', on);
+      chip.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
 
@@ -412,6 +422,17 @@
 
   form.addEventListener('submit', event => { event.preventDefault(); load(); });
   document.querySelectorAll('.an-quick .chip').forEach(chip => chip.addEventListener('click', () => { setQuick(chip.dataset.days); load(); }));
+  // Смена режима перезапрашивает тот же период тем же load(): поздний ответ
+  // прежнего режима отсекает тот же счётчик `request`. При неверном периоде
+  // режим не меняем: load() его не загрузит, и кнопка разошлась бы с цифрами.
+  document.querySelectorAll('.an-year-mode .chip').forEach(chip => chip.addEventListener('click', () => {
+    if (chip.dataset.year === yearMode) return;
+    const problem = L.periodError(startInput.value, endInput.value, today);
+    if (problem) { say(problem, true); return; }
+    yearMode = chip.dataset.year;
+    markYearMode();
+    load();
+  }));
   [startInput, endInput].forEach(input => input.addEventListener('change', markChips));
   let resizeTimer = null;
   window.addEventListener('resize', () => {

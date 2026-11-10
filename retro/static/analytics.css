@@ -22,6 +22,10 @@
 .an-metric.is-current small{color:#b9cdbc}
 .an-metric small b{font-weight:600}
 .an-metric small i{font-style:normal}
+/* T-648: переключатель режима «год назад» внутри карточки; кнопки переносятся, а не рвут её. */
+.an-year-mode{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0 10px}
+.an-year-mode .chip{min-height:34px;padding:6px 10px;font-size:12px;border:1px solid var(--border);background:#fff;white-space:nowrap}
+.an-year-mode .chip.active{background:#edf2e9;border-color:#cfe0cd}
 
 .an-compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:20px}
 .an-trend{padding:18px 22px;background:#fff;border:1px solid var(--border);border-radius:var(--radius)}
@@ -93,4 +97,4 @@
 
 @media(max-width:1180px){.an-metrics{gap:12px}.an-metric{padding:17px}}
 @media(max-width:900px){.an-metrics{grid-template-columns:1fr 1fr}.an-metric.is-current{grid-column:span 2}.an-panel-head{flex-direction:column}.an-chart{height:250px}}
-@media(max-width:650px){.an-history-summary{grid-template-columns:1fr 1fr}.an-metrics,.an-compare{grid-template-columns:1fr;gap:12px}.an-metric.is-current{grid-column:auto}.an-metric{min-height:112px;border-radius:13px}.an-controls{display:grid;grid-template-columns:1fr;gap:12px}.an-controls .button{margin:0}.an-quick{justify-content:flex-start}.an-panel{padding:19px 16px}.an-chart{height:230px}.an-tooltip{min-width:170px}}
+@media(max-width:650px){.an-history-summary{grid-template-columns:1fr 1fr}.an-metrics,.an-compare{grid-template-columns:1fr;gap:12px}.an-metric.is-current{grid-column:auto}.an-metric{min-height:112px;border-radius:13px}.an-controls{display:grid;grid-template-columns:1fr;gap:12px}.an-controls .button{margin:0}.an-quick{justify-content:flex-start}.an-panel{padding:19px 16px}.an-chart{height:230px}.an-tooltip{min-width:170px}.an-year-mode .chip{flex:1 1 0;min-height:40px}}

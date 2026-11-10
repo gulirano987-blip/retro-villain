@@ -43,7 +43,8 @@
     <section class="an-metrics" aria-label="Выручка по окнам" aria-busy="true">
       <article class="an-metric is-current" data-period="current"><span data-label>Выбранный период</span><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
       <article class="an-metric is-previous" data-period="previous"><span data-label>Период раньше</span><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
-      <article class="an-metric is-year" data-period="year"><span data-label>Год назад</span><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
+      <!-- T-648: «год назад» — те же дни недели (364 дня, по умолчанию) или те же календарные даты. -->
+      <article class="an-metric is-year" data-period="year"><span data-label>Год назад</span><div class="an-year-mode" role="group" aria-label="Как сравнивать с годом назад"><button class="chip active" type="button" data-year="weekday" aria-pressed="true">Те же дни недели</button><button class="chip" type="button" data-year="date" aria-pressed="false">Те же даты</button></div><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
     </section>
 
     <section class="an-compare" aria-label="Сравнение с предыдущими окнами">
@@ -52,7 +53,7 @@
     </section>
 
     <section class="panel an-panel" aria-labelledby="an-chart-title">
-      <div class="an-panel-head"><div><p class="eyebrow">ДИНАМИКА · ДЕНЬ К ДНЮ</p><h2 id="an-chart-title">Три периода на одном графике</h2><p class="an-panel-note">Точка — выручка Retro за день; дни сравниваются по порядку: первый день периода с первым днём отрезка раньше, «год назад» — 52 недели назад, дни недели совпадают. Подписи оси — дни выбранного периода.</p></div><div id="an-legend" class="an-legend" aria-hidden="true"></div></div>
+      <div class="an-panel-head"><div><p class="eyebrow">ДИНАМИКА · ДЕНЬ К ДНЮ</p><h2 id="an-chart-title">Три периода на одном графике</h2><p class="an-panel-note">Точка — выручка Retro за день; дни сравниваются по порядку: первый день периода с первым днём отрезка раньше, «год назад» — по переключателю: те же дни недели 52 недели назад или те же даты годом раньше. Подписи оси — дни выбранного периода.</p></div><div id="an-legend" class="an-legend" aria-hidden="true"></div></div>
       <div id="an-chart" class="an-chart" aria-label="Линейный график выручки за три недели"></div>
       <details class="an-table-details"><summary>Таблица по дням</summary><div class="an-table-wrap"><table class="an-table" id="an-table"><thead><tr><th>День</th><th data-head="current">Выбранный период</th><th data-head="previous">Период раньше</th><th data-head="year">Год назад</th></tr></thead><tbody></tbody></table></div></details>
     </section>

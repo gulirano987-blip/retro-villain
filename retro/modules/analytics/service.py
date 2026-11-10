@@ -11,8 +11,17 @@
 завершённых дней по вчера включительно (как «7 завершённых дней» в аналитике
 учредителя): день в iiko закрывается ночью, и сравнивать идущий день с полными
 нечестно. Сравнение идёт день к дню: «раньше» — столько же дней непосредственно
-перед окном, «год назад» — те же дни 52 недели (364 дня) назад, чтобы дни недели
-совпадали.
+перед окном, «год назад» — в одном из двух режимов (T-648):
+
+* `weekday` (по умолчанию) — те же дни 52 недели (364 дня) назад, чтобы дни
+  недели совпадали: выручка ресторана зависит от дня недели сильнее, чем от
+  числа, и для обычного периода это честное сравнение. Цена — дата уезжает
+  на день за год (на два через 29 февраля): 31.12 сравнивается с 01.01;
+* `date` — те же календарные даты годом раньше, для праздников и других дат,
+  привязанных к календарю. Окно отсчитывается от начала периода и всегда той же
+  длины; 29.02 в невисокосном году — 28.02.
+
+Совпасть одновременно и дате, и дню недели нельзя — режим выбирает человек.
 """
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -22,6 +31,7 @@ from retro.modules.cashier.service import TZ
 WINDOW = 7
 MAX_DAYS = 92
 YEAR_SHIFT = 364
+YEAR_MODES = ('weekday', 'date')
 DIRECTION = 'retro'
 DIRECTION_NAME = 'Retro · без школы и банкетного зала'
 WEEKDAYS = ('пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс')
@@ -34,21 +44,37 @@ def day_word(count):
     return 'день' if tail == 1 else 'дня'
 
 
-def windows(start, end):
-    """Три окна по выбранному периоду: он сам, столько же дней перед ним и те же дни год назад."""
+def year_ago(start, end, mode='weekday'):
+    """Окно «год назад» в режиме `mode`: (начало, конец, подпись).
+
+    В режиме `date` сдвигается только начало, конец — та же длина от него: окно,
+    пересекающее 29 февраля, иначе стало бы на день короче или длиннее периода."""
+    if mode == 'weekday':
+        return (start - timedelta(days=YEAR_SHIFT), end - timedelta(days=YEAR_SHIFT),
+                'Год назад · те же дни недели')
+    try:
+        first = start.replace(year=start.year - 1)
+    except ValueError:  # 29.02 — в прошлом году его нет
+        first = start.replace(year=start.year - 1, day=28)
+    return first, first + (end - start), 'Год назад · те же даты'
+
+
+def windows(start, end, year='weekday'):
+    """Три окна по выбранному периоду: он сам, столько же дней перед ним и год назад в режиме `year`."""
     length = (end - start).days + 1
+    past_start, past_end, past_label = year_ago(start, end, year)
     return [dict(key='current', label='Выбранный период', start=start, end=end),
             dict(key='previous', label=f'{length} {day_word(length)} раньше',
                  start=start - timedelta(days=length), end=start - timedelta(days=1)),
-            dict(key='year', label='Год назад', start=start - timedelta(days=YEAR_SHIFT), end=end - timedelta(days=YEAR_SHIFT))]
+            dict(key='year', label=past_label, start=past_start, end=past_end)]
 
 
-def spans(start, end):
+def spans(start, end, year='weekday'):
     """Непрерывные отрезки дней, которые нужны для окон: период с окном «раньше»
-    одним куском и окно год назад — отдельно (между ними ничего не грузим)."""
-    length = (end - start).days + 1
-    return [(start - timedelta(days=length), end),
-            (start - timedelta(days=YEAR_SHIFT), end - timedelta(days=YEAR_SHIFT))]
+    одним куском и окно год назад — отдельно (между ними ничего не грузим).
+    Отрезки берутся из самих окон, чтобы загрузка не разошлась с показом."""
+    _, previous, past = windows(start, end, year)
+    return [(previous['start'], end), (past['start'], past['end'])]
 
 
 def retro_revenue(state):
@@ -94,9 +120,9 @@ def compare(current, other):
     return dict(diff=str(diff), percent=percent, direction='up' if diff > 0 else 'down' if diff < 0 else 'flat')
 
 
-def build_report(start, end, states, *, today, history_start, configured=True, refresh_error=None):
+def build_report(start, end, states, *, today, history_start, configured=True, refresh_error=None, year='weekday'):
     """Ответ модуля из состояний дней (`SalesStore.states`) за все окна."""
-    periods = [_period(window, states, today) for window in windows(start, end)]
+    periods = [_period(window, states, today) for window in windows(start, end, year)]
     current = periods[0]
     comparison = [dict(against=other['key'], label=other['label'], start=other['start'], end=other['end'],
                        **compare(current['total'], other['total']))
@@ -142,7 +168,7 @@ def build_report(start, end, states, *, today, history_start, configured=True, r
         source='iiko OLAP SALES · история чеков в базе панели', timezone=str(TZ),
         today=today.isoformat(), start=start.isoformat(), end=end.isoformat(), includes_today=end >= today,
         direction=DIRECTION, direction_name=DIRECTION_NAME,
-        window_days=(end - start).days + 1, history_start=history_start.isoformat(), configured=configured,
+        window_days=(end - start).days + 1, year=year, history_start=history_start.isoformat(), configured=configured,
         updated_at=updated.astimezone(TZ).isoformat(timespec='seconds') if updated else None,
         complete=all(period['complete'] for period in periods),
         periods=periods, comparison=comparison, warnings=warnings)
