@@ -215,6 +215,8 @@ function renderSalesBridge(data){
   if(!bridge){$('sales-bridge-equation').textContent='Расшифровка оплат пока недоступна. Обновите отчёт.';return}
   const labels={paid:'Оплаты продаж',prepaid:'Зачтённые авансы',other:'Другие операции',sales:'Продажи'};
   ['paid','prepaid','other'].forEach(key=>$('sales-'+key).textContent=exactMoney.format(Number(bridge.totals[key])));
+  // Итог «= Продажи» — строкой на телефоне (макет «3б»); на компьютере он в формуле ниже.
+  $('sales-total').textContent=exactMoney.format(Number(bridge.totals.sales));
   $('sales-other-card').hidden=!Number(bridge.totals.other)&&!bridge.unknown_operations.length;
   $('sales-bridge-scope').textContent=data.directions.map(key=>directionMeta[key].label).join(' · ')+' · '+data.period.start+' — '+data.period.end;
   const terms=['paid','prepaid',...((Number(bridge.totals.other)||bridge.unknown_operations.length)?['other']:[])];
