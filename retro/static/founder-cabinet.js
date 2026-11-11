@@ -13,7 +13,8 @@
   const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
   const MONTHS_OF = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
-  const state = {today: null, yesterday: null, data: {}, pending: {}, editor: {open: false, draft: 0, message: '', error: false, saving: false}};
+  const state = {today: null, yesterday: null, data: {}, pending: {}, chefOpen: false,
+    editor: {open: false, draft: 0, message: '', error: false, saving: false}};
   let chat = null;
 
   function node(tag, className, text) {
@@ -56,7 +57,7 @@
   const VALUE_IDS = ['fo-div-collected', 'fo-div-target', 'fo-y-demo', 'fo-y-recv', 'fo-morning', 'fo-t-retro', 'fo-t-ox',
     'fo-out-sal', 'fo-out-zak', 'fo-out-oth', 'fo-evening', 'fo-acc-line', 'k-retro', 'k-ox', 'k-demo', 'k-div', 'k-month',
     'fo-checks-title', 'fo-chef-title', 'fo-exp-total', 'z-given', 'z-spent', 'z-direct', 'z-pocket', 'z-flag-title', 'fo-week-label',
-    'fo-div-range', 'fo-div-of', 'fo-div-status', 'fo-y-date', 'fo-t-checks'];
+    'fo-div-range', 'fo-div-of', 'fo-div-status', 'fo-y-date', 'fo-t-checks', 'fo-b-cash', 'fo-b-acc', 'fo-b-chef', 'fo-b-report'];
 
   function skeletonLines(target, rows) {
     const list = node('div', 'dir-skel-list');
@@ -301,17 +302,67 @@
     renderEditor();
   }
 
+  /* ── Состав счёта Шефа (макет «4», фронтенд задачи 4 ТЗ от 10.11) ──────
+     Блюда приходят в `dishes` — как у заказов в push-уведомлении сервера.
+     Нет поля — строка счёта не раскрывается, уведомление остаётся прежним. */
+  const SHOWN_DISHES = 3;
+  function billDishes(bill) { return bill && Array.isArray(bill.dishes) ? bill.dishes : []; }
+  function dishQuantity(dish) { const value = num(dish.quantity); return value === null ? '' : String(value).replace('.', ','); }
+
+  function dishList(bill, className) {
+    const list = node('div', className);
+    const head = node('div', 'fo-bill-head');
+    head.append(node('span', '', 'Состав счёта'));
+    if (bill.dishes_sample) head.append(node('em', 'fo-bill-sample', 'пример'));
+    list.append(head);
+    billDishes(bill).forEach(dish => {
+      const row = node('div', 'fo-bill-dish');
+      const name = node('span', '', dish.name);
+      name.dataset.i18n = 'off';  // название из iiko не переводим
+      name.append(node('small', '', ' × ' + dishQuantity(dish)));
+      row.append(name, node('b', 'rm-num', sum(num(dish.amount))));
+      list.append(row);
+    });
+    return list;
+  }
+
+  /** Шторка с полным составом — по нажатию на уведомление. */
+  function openBill(bill) {
+    const sheet = $('fo-bill-sheet');
+    setText('fo-bill-day', 'СЧЁТ ШЕФА · ' + dm(bill.day));
+    setText('fo-bill-table', 'Стол ' + bill.table);
+    setText('fo-bill-waiters', 'Официант: ' + (bill.waiters.join(', ') || '—'));
+    const list = dishList(bill, 'fo-bill-list');
+    const total = node('div', 'fo-bill-dish is-total');
+    total.append(node('span', '', 'Итого'), node('b', 'rm-num' + (bill.over ? ' is-over' : ''), sum(num(bill.amount)) + ' сум'));
+    list.append(total);
+    $('fo-bill-body').replaceChildren(list);
+    $('fo-bill-over').hidden = !bill.over;
+    setText('fo-bill-over', 'Счёт выше порога ' + sum(chefLimit(state.data.chef)) + ' — отмечен для проверки');
+    if (typeof sheet.showModal === 'function') { if (!sheet.open) sheet.showModal(); } else sheet.setAttribute('open', '');
+  }
+
   // ── Телефон (7a) ─────────────────────────────────────────────────────
   function renderAlerts(chef) {
     const target = $('fo-alerts');
     target.replaceChildren();
     logic.chefAlerts(chef, state.today, state.yesterday, dismissed()).forEach(bill => {
       const alert = node('div', 'fo-alert');
-      const body = node('div');
+      const dishes = billDishes(bill);
+      // С составом уведомление нажимается и открывает шторку со всеми блюдами.
+      const body = node(dishes.length ? 'button' : 'div', dishes.length ? 'fo-alert-body' : '');
+      if (dishes.length) { body.type = 'button'; body.addEventListener('click', () => openBill(bill)); }
       const meta = node('small');
       meta.append(node('span', '', 'RETRO MILLIY'), node('span', '', bill.day === state.today ? 'сегодня' : 'вчера'));
       body.append(meta, node('strong', '', 'Счёт Шефа · ' + sum(num(bill.amount)) + ' сум'),
         node('p', '', 'Стол ' + bill.table + ' · ' + (bill.waiters.join(', ') || 'без официанта') + ' · больше ' + short(chefLimit(chef)) + ' за один счёт'));
+      if (dishes.length) {
+        const shown = dishes.slice(0, SHOWN_DISHES).map(dish => dish.name + ' ×' + dishQuantity(dish)).join(', ');
+        const rest = dishes.length - SHOWN_DISHES;
+        const line = node('p', 'fo-alert-dishes', shown + (rest > 0 ? ' и ещё ' + rest + ' ' + plural(rest, 'позиция', 'позиции', 'позиций') : ''));
+        line.dataset.i18n = 'off';
+        body.append(line);
+      }
       const close = node('button', '', '×');
       close.type = 'button';
       close.setAttribute('aria-label', 'Скрыть уведомление');
@@ -361,6 +412,59 @@
     }
   }
 
+  /* ── Бенто под херо (макет «2 · Главная», ноябрь 2026) ────────────────
+     Только показ уже пришедших ответов: касса вчера — продажи из того же
+     отчёта кассира, что во вкладке «Касса · вчера»; у бухгалтера — остаток
+     вкладки «Бухгалтер · сегодня»; Счёт Шефа — счета вчерашнего дня из списка
+     недели; отчёт бухгалтера — из сданных отчётов. Чего нет в ответе — нет и
+     на экране: процент к прошлой неделе показывается, только если он пришёл. */
+  function renderBento() {
+    const yesterday = state.data.yesterday, today = state.data.today;
+    const weekday = state.yesterday ? logic.WEEKDAYS[(new Date(state.yesterday + 'T12:00:00Z').getUTCDay() + 6) % 7].toLowerCase() : '';
+    setText('fo-b-cash-label', 'Касса вчера · ' + weekday + ' ' + dm(state.yesterday));
+    const change = $('fo-b-cash-change');
+    change.hidden = true;
+    if (yesterday) {
+      const view = logic.cashierBrief(yesterday, state.today);
+      setText('fo-b-cash', view.error ? '—' : sum(view.sales));
+      const compare = yesterday.cashier && yesterday.cashier.compare;
+      const percent = compare ? num(compare.percent) : null;
+      if (percent !== null) {
+        change.hidden = false;
+        change.textContent = (percent >= 0 ? '▲ ' : '▼ ') + Math.abs(percent) + '%';
+        change.className = 'fo-bento-change ' + (percent >= 0 ? 'is-up' : 'is-down');
+      }
+      const parts = [];
+      if (compare && compare.date) parts.push('к ' + logic.WEEKDAYS[(new Date(compare.date + 'T12:00:00Z').getUTCDay() + 6) % 7].toLowerCase() + ' ' + dm(compare.date));
+      if (view.error) parts.push('нет данных iiko за вчера');
+      else parts.push(view.received.label.toLowerCase() + ' ' + view.received.value + (view.received.mark ? ' ' + view.received.mark : ''));
+      setText('fo-b-cash-note', parts.join(' · '));
+    }
+    if (today) {
+      const brief = logic.accountantBrief(today);
+      setText('fo-b-acc', brief.error ? '—' : sum(brief.balance));
+    }
+    const chef = state.data.chef;
+    if (chef) {
+      if (chef.error) { setText('fo-b-chef', '—'); setText('fo-b-chef-sub', 'нет данных iiko'); }
+      else {
+        const bills = chef.week.filter(bill => bill.day === state.yesterday);
+        setText('fo-b-chef', sum(bills.reduce((acc, bill) => acc + (num(bill.amount) || 0), 0)));
+        setText('fo-b-chef-sub', bills.length + ' ' + plural(bills.length, 'счёт', 'счёта', 'счетов'));
+      }
+    }
+    const reports = state.data.reports;
+    if (reports) {
+      const report = (reports.reports || []).find(item => item.day === state.yesterday);
+      const mark = $('fo-b-report-mark');
+      setText('fo-b-report', !report ? 'Не сдан' : report.changed ? 'Изменён после сдачи' : 'Сдан · ' + stamp(report.submitted_at).slice(6));
+      const tone = !report ? 'is-bad' : report.changed ? 'is-warn' : 'is-ok';
+      $('fo-b-report').className = tone;
+      mark.className = 'fo-bento-mark ' + tone;
+      mark.textContent = report && !report.changed ? '✓' : '!';
+    }
+  }
+
   /** Строка замечаний на 7a — те же замечания недели, что в «Проверке
    *  бухгалтера» на компьютере; «Все замечания ↓» раскрывает их здесь же. */
   function renderPhoneIssues(issues) {
@@ -389,16 +493,14 @@
     });
   }
 
-  /* ── Краткие отчёты дня (T-512): касса вчера/сегодня, бухгалтер сегодня ── */
-  const REPORT_KEY = 'retro.founder.report-tab';
-  const REPORT_TABS = ['cashier-y', 'cashier-t', 'accountant-t'];
-  function reportTab() {
-    let saved = null;
-    try { saved = localStorage.getItem(REPORT_KEY); } catch (error) { saved = null; }
-    return REPORT_TABS.includes(saved) ? saved : 'cashier-y';
-  }
+  /* ── Краткие отчёты дня (T-512): бухгалтер сегодня, касса вчера/сегодня ──
+     Макет «2 · Главная» (ноябрь 2026): при открытии всегда первая вкладка —
+     «Бухгалтер · сегодня»; выбранная вкладка живёт до перезагрузки. */
+  const REPORT_TABS = ['accountant-t', 'cashier-y', 'cashier-t'];
+  let reportChoice = REPORT_TABS[0];
+  function reportTab() { return reportChoice; }
   function chooseReport(tab) {
-    try { localStorage.setItem(REPORT_KEY, tab); } catch (error) { /* выбор просто не запомнится */ }
+    reportChoice = tab;
     renderBrief(tab);
   }
 
@@ -503,6 +605,7 @@
     state.failed = {today: today.status === 'rejected' ? today.reason.message : null,
       yesterday: yesterday.status === 'rejected' ? yesterday.reason.message : null};
     renderBrief();
+    renderBento();
     // Время — чтения iiko сервером (ТЗ 16.10, п. 2), не часы телефона.
     setText('updated', today.status === 'rejected' ? today.reason.message : logic.todayStatus(today.value, state.today));
   }
@@ -551,6 +654,7 @@
     setText('k-retro-sub', totals.days + ' ' + plural(totals.days, 'день', 'дня', 'дней') + ' недели');
     setText('k-ox-sub', week.orders_error ? 'чеки: ' + week.orders_error : '');
     setText('fo-week-label', dm(week.start) + '–' + dm(week.end));
+    setText('fo-more-week', short(totals.retro + totals.school));
     // Неделя кабинета всегда доходит до сегодня: итоги растут вместе с днём.
     deskStatus(logic.todayStatus(week.days.find(day => day.date === state.today), state.today));
   }
@@ -570,6 +674,7 @@
     state.issues = issues;
     renderPhoneIssues(issues);
     setText('fo-checks-title', issues.length ? issues.length + ' ' + plural(issues.length, 'замечание', 'замечания', 'замечаний') : 'Замечаний нет');
+    setText('fo-more-acc', issues.length ? issues.length + ' ' + plural(issues.length, 'замечание', 'замечания', 'замечаний') : 'замечаний нет');
     const list = $('fo-checks');
     list.replaceChildren();
     // Компьютер: семь и «ещё N — спросите AI»; телефон: весь список, ничего не прячем.
@@ -608,11 +713,29 @@
     }
   }
 
+  /* Телефон (макет «2 · Главная»): Счёт Шефа свёрнут — видны сумма недели,
+     порог и счета выше порога; «Все счета» раскрывает список, строку
+     уведомлений и итог месяца. Свёрнутость — классом, данные те же. */
+  function renderChefFold(chef) {
+    const panel = $('fo-chef-panel'), more = $('fo-chef-more');
+    const bills = chef && !chef.error ? chef.week.slice(0, 12).length : 0;
+    const folding = !desk.matches && bills > 0;
+    more.hidden = !folding;
+    panel.classList.toggle('is-folded', folding && !state.chefOpen);
+    more.setAttribute('aria-expanded', String(state.chefOpen));
+    more.textContent = state.chefOpen ? 'Свернуть ▴' : 'Все счета недели · ' + bills + ' ▾';
+  }
+
   function renderChef(chef) {
     renderAlerts(chef);
     renderChefWeek(chef);
     renderChefLimit(chef);
+    renderChefFold(chef);
+    renderBento();
     setText('fo-chef-limit-note', 'Отмечаем счета больше ' + sum(chefLimit(chef)));
+    // Профиль (макет «5»): порог отметки — только чтение, из ответа сервера.
+    $('fo-sheet-limit-row').hidden = Boolean(chef.error) || num(chef.limit) === null;
+    setText('fo-sheet-limit', sum(chefLimit(chef)));
     const list = $('fo-chef');
     list.replaceChildren();
     if (chef.error) { list.append(node('p', 'fo-empty', chef.error)); setText('fo-chef-title', 'Нет данных iiko'); return; }
@@ -623,11 +746,24 @@
     // Счета выше порога — наверх: ради них учредитель и открывает блок.
     const bills = chef.week.filter(bill => bill.over).concat(chef.week.filter(bill => !bill.over));
     bills.slice(0, 12).forEach(bill => {
-      const row = node('div', 'fo-chef-row' + (bill.over ? ' is-over' : ''));
+      const dishes = billDishes(bill);
+      const row = node(dishes.length ? 'button' : 'div', 'fo-chef-row' + (bill.over ? ' is-over' : '') + (dishes.length ? ' has-dishes' : ''));
       const who = node('span');
       who.append(document.createTextNode('Стол ' + bill.table + ' · '), node('small', '', bill.waiters.join(', ') || '—'));
       row.append(node('span', '', dm(bill.day)), who, node('b', '', sum(num(bill.amount))));
       list.append(row);
+      if (!dishes.length) return;
+      // Нажатие на строку раскрывает состав счёта под ней.
+      const items = dishList(bill, 'fo-chef-dishes');
+      items.hidden = true;
+      row.type = 'button';
+      row.setAttribute('aria-expanded', 'false');
+      row.addEventListener('click', () => {
+        const open = row.getAttribute('aria-expanded') !== 'true';
+        row.setAttribute('aria-expanded', String(open));
+        items.hidden = !open;
+      });
+      list.append(items);
     });
   }
 
@@ -638,6 +774,7 @@
     setText('fo-exp-title', 'РАСХОДЫ ' + MONTHS_OF[index].toUpperCase());
     setText('fo-shokh-month', month);
     setText('fo-exp-total', sum(num(data.expenses.total)) + ' сум');
+    setText('fo-more-exp', short(num(data.expenses.total)));
     const list = $('fo-exp-list');
     list.replaceChildren();
     const max = Math.max(1, ...data.expenses.categories.map(item => num(item.amount)));
@@ -710,6 +847,7 @@
     setText('fo-forecast-note', logic.forecastNote(data));
     const month = data.month;
     setText('k-month', short(num(month.total)));
+    setText('fo-more-menu', short(num(month.total)));
     setText('k-month-sub', 'факт ' + short(num(month.fact)) + ' + прогноз ' + short(num(month.forecast)));
     if (state.data.week) renderWeek(state.data.week);
     if (state.data.today) renderPhoneDays(state.data.today, state.data.yesterday);
@@ -812,6 +950,7 @@
 
   function loadForLayout() {
     placeChef();
+    renderChefFold(state.data.chef);
     // Телефон показывает 7a и под ним всю картину компьютера — данные нужны обе.
     if (desk.matches) loadDesk(); else { loadPhone().catch(() => {}); if (!state.deskLoaded) loadDesk(); }
     if (!desk.matches) state.deskLoaded = true;
@@ -821,9 +960,10 @@
 
   /* Телефон: разделы «Всей картины» раскрываются по заголовку. */
   function setFold(id, open) {
-    const link = document.querySelector('.fo-fold[data-fold="' + id + '"]');
     $(id).classList.toggle('fo-open', open);
-    if (link) link.setAttribute('aria-expanded', String(open));
+    // Заголовок раздела и строка карточки «Подробно» внизу телефона — одно состояние.
+    document.querySelectorAll('.fo-fold[data-fold="' + id + '"], .fo-more [data-more="' + id + '"]')
+      .forEach(link => link.setAttribute('aria-expanded', String(open)));
   }
 
   /* ── Отчёты бухгалтера (ТЗ 02.10): сданные дни и закрытые месяцы ─── */
@@ -875,8 +1015,10 @@
     const yesterday = reports.find(item => item.day === state.yesterday);
     const mark = $('fo-y-report');
     mark.textContent = !yesterday ? 'не сдан' : yesterday.changed ? 'изменён после сдачи' : 'сдан ' + stamp(yesterday.submitted_at).slice(6);
+    setText('fo-more-reports', 'вчера ' + mark.textContent);
     mark.classList.toggle('is-ok', !!yesterday && !yesterday.changed);
     mark.classList.toggle('is-warn', !yesterday || yesterday.changed);
+    renderBento();
   }
 
   function bind() {
@@ -890,9 +1032,23 @@
       setFold(link.dataset.fold, link.getAttribute('aria-expanded') !== 'true');
     }));
     // «Все замечания» на 7a раскрывает полный список прямо на телефоне.
+    // Заголовки разделов на телефоне скрыты (макет «2 · Главная») — листаем к самому списку.
     $('fo-acc-open').addEventListener('click', () => {
       setFold('fo-acc', true);
-      document.querySelector('.fo-fold[data-fold="fo-acc"]').scrollIntoView({block: 'start', behavior: 'smooth'});
+      $('fo-acc').scrollIntoView({block: 'start', behavior: 'smooth'});
+    });
+    // Карточка «Подробно»: строка раскрывает раздел под карточкой, повторное нажатие — сворачивает.
+    document.querySelectorAll('.fo-more [data-more]').forEach(button => button.addEventListener('click', () => {
+      const id = button.dataset.more, open = button.getAttribute('aria-expanded') !== 'true';
+      setFold(id, open);
+      if (open) $(id).scrollIntoView({block: 'start'});
+    }));
+    $('fo-bill-close').addEventListener('click', () => $('fo-bill-sheet').close());
+    // Нажатие на затемнение вокруг шторки закрывает её, как у профиля.
+    $('fo-bill-sheet').addEventListener('click', event => { if (event.target === event.currentTarget) event.currentTarget.close(); });
+    $('fo-chef-more').addEventListener('click', () => {
+      state.chefOpen = !state.chefOpen;
+      renderChefFold(state.data.chef);
     });
     // Ссылка «Изменить сумму» в карточке недели на телефоне ведёт к редактору наверху.
     $('k-div-edit').addEventListener('click', () => {
@@ -942,6 +1098,11 @@
     $('fo-phone-excel').href = $('fo-excel').href;
     setText('fo-phone-excel-label', 'Отчёт бухгалтера · ' + MONTHS[Number(month.slice(5, 7)) - 1] + ' · Excel');
     bind();
+    // Телефон: из Аналитики («Деньги недели», «Проверка бухгалтера»…) приходят
+    // по ссылке /founder#fo-week — раздел сразу раскрыт, хотя заголовков разделов нет.
+    const opened = location.hash.slice(1);
+    const openFromLink = !desk.matches && document.querySelector('.fo-fold[data-fold="' + opened + '"]');
+    if (openFromLink) setFold(opened, true);
     download($('fo-excel'), 'Retro-accountant-' + month + '.xlsx');
     download($('fo-phone-excel'), 'Retro-accountant-' + month + '.xlsx');
     load('dividends', '/api/founder/dividends/weekly').then(renderDividends).catch(error => setText('fo-div-status', error.message));
@@ -950,6 +1111,10 @@
     load('reports', '/api/founder/accountant-reports').then(renderReports).catch(error => setText('fo-reports-title', error.message));
     loadForLayout();
     // Когда все блоки ответили (или упали) — ни одной вечной полосы.
-    setTimeout(() => Promise.allSettled(Object.values(state.pending)).then(dashSkeletons), 0);
+    setTimeout(() => Promise.allSettled(Object.values(state.pending)).then(() => {
+      dashSkeletons();
+      // Блоки выше выросли под данные — листаем к открытому по ссылке разделу только теперь.
+      if (openFromLink) $(opened).scrollIntoView({block: 'start'});
+    }), 0);
   })();
 })();
